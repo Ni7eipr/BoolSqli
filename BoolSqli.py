@@ -1,4 +1,6 @@
 #-*- coding:utf-8 -*-
+# author:End1ng
+
 # python BoolSqli.py -u "http://172.21.50.66/Less-7/index.php?id=1'))" -o "You are in" -n "You have an error in your SQL syntax" --level DEBUG
 import requests
 import threading

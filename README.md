@@ -1,7 +1,14 @@
 # BoolSqli
 布尔注入工具
 
-注：要求注入点参数是返回错误页面，or后为正确页面，且注入点放到最后一个参数
+目前:
+支持get和post方法
+支持中文数据gbk&utf-8
+
+注：
+>get  ：要求注入点参数是返回错误页面，or Ture 后为正确页面，且注入点放到最后一个参数
+>post ：要求注入点参数是返回错误页面，or Ture 后为正确页面，且注入点用*号标识
+具体请看示例
 
 # 用法
 同sqlmap
@@ -38,12 +45,13 @@ other arguments:
 # 例子：
 
 GET
-
+注入点 id
 ```
 python BoolSqli.py -u"http://xxx/sqli-labs-master/Less-7/?xxx=1&id=-1'))" --dbs
 ```
 
 POST
+注入点 userName
 ```
 python BoolSqli.py -u "http://xxx/login.php" -p "pwd=123" "*userName=1'" --dbs
 ```

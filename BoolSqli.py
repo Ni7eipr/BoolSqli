@@ -2,7 +2,6 @@
 # author:End1ng
 
 import requests
-# import threading
 import logging
 import argparse
 import sys
